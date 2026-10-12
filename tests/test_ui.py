@@ -160,7 +160,8 @@ def test_geometry_remembered(qapp, store):
     w = make_window(qapp, store)
     w.show()
     w.resize(760, 520)
+    size = (w.width(), w.height())  # the platform may enforce a larger minimum
     w.close()
     w2 = make_window(qapp, store)
     w2.show()
-    assert (w2.width(), w2.height()) == (760, 520)
+    assert (w2.width(), w2.height()) == size
