@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
 
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(1)  # FIFO: appended captures keep their order
-        self._signals = _OcrSignals()
+        self._signals = _OcrSignals(self)
         self._signals.done.connect(self._on_ocr_done)
         self._signals.failed.connect(self._on_ocr_failed)
 

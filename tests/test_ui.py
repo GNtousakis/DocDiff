@@ -1,6 +1,6 @@
 import pytest
 from PIL import Image
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QCoreApplication, QEvent, QSettings
 from PySide6.QtWidgets import QApplication
 
 from docdiff import strings
@@ -13,7 +13,15 @@ from docdiff.ui.settings_dialog import SettingsDialog
 
 @pytest.fixture(scope="session")
 def qapp():
-    return QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])
+    yield app
+    for w in _windows:
+        w.pool.waitForDone(5000)
+        w.close()
+        w.deleteLater()
+    _windows.clear()
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 @pytest.fixture
@@ -21,8 +29,13 @@ def store(tmp_path):
     return SettingsStore(QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat))
 
 
+_windows = []
+
+
 def make_window(qapp, store, engine=None):
-    return MainWindow(engine or StubOcrEngine(["table_v1", "table_v2"]), store, hotkeys=None, show_dialogs=False)
+    w = MainWindow(engine or StubOcrEngine(["table_v1", "table_v2"]), store, hotkeys=None, show_dialogs=False)
+    _windows.append(w)
+    return w
 
 
 IMG = Image.new("RGB", (200, 80), "white")
