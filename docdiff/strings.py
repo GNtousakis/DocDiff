@@ -89,3 +89,24 @@ INFO_READING = "Ανάγνωση κειμένου…"
 INFO_DONE = "Έτοιμο."
 MSG_TITLE_WARNING = "Προειδοποίηση"
 MSG_TITLE_ERROR = "Σφάλμα"
+
+# Image comparison mode
+MODE_TEXT = "Κείμενο"
+MODE_IMAGE = "Εικόνα"
+SIMILARITY_CAPTION = "Ομοιότητα"
+SIMILARITY_FMT = "{pct}%"
+LEGEND_REGIONS = "Περιοχές διαφορών"
+SUMMARY_IMAGES_IDENTICAL = "Οι εικόνες είναι ίδιες."
+CHK_HEAT = "Θερμικός χάρτης"
+IMAGE_PLACEHOLDER = "Η περιοχή που θα καταγραφεί θα εμφανιστεί εδώ."
+HINT_ADD_IMAGE = "Καταγράψτε περιοχή και στα δύο έγγραφα."
+INFO_COMPARING = "Σύγκριση εικόνων…"
+WARN_IMAGE_RESIZED = (
+    "Οι εικόνες δεν ευθυγραμμίστηκαν· η Β προσαρμόστηκε στο μέγεθος της Α, "
+    "οπότε μικρές μετατοπίσεις μπορεί να εμφανιστούν ως διαφορές."
+)
+WARN_IMAGE_ASPECT = "Οι εικόνες έχουν διαφορετικές αναλογίες και δεν ευθυγραμμίστηκαν· το ποσοστό είναι ενδεικτικό."
+ERR_IMAGE_COMPARE_FAILED = "Η σύγκριση εικόνων απέτυχε: {detail}"
+ERR_COMPARE_NO_IMAGE = "Και τα δύο έγγραφα πρέπει να έχουν εικόνα."
+SETTINGS_IMAGE_SENSITIVITY = "Ευαισθησία σύγκρισης εικόνων:"
+SENSITIVITY_LEVELS = ("Χαμηλή", "Κανονική", "Υψηλή")

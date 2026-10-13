@@ -17,6 +17,15 @@
 - **Hotkeys**: `RegisterHotKey` (thread queue) with a Qt native event filter for `WM_HOTKEY`; no hooks. Settings use `QKeySequenceEdit`.
 - **Multiple regions**: one OCR worker thread (FIFO) keeps appended captures in order. Removing a region deletes its original text from the box; if the
   user already edited that text a Greek warning asks them to delete it manually.
+- **Similarity %**: text mode = `2 * matched words / (words A + words B)` (`DiffStats.similarity`; table cells are counted word by word). Image mode =
+  mean SSIM over the *content area* only (dilated ink of A or B, theme independent), so white page background does not inflate the score. Shown as
+  `100%` only when nothing differs, otherwise rounded down (never `100.0%` for a non-identical pair).
+- **Image mode** (`docdiff/imagediff.py`, no Qt): ORB features + RANSAC `estimateAffinePartial2D` (shift/scale/small rotation, not a homography - captures
+  are flat and a homography can warp wrongly on repetitive text/tables) aligns B onto A; rejected when too few inliers, scale outside 0.25-4x or rotation > 10 deg,
+  then B is simply stretched to A's size and a warning is shown. Then blur -> SSIM -> threshold -> morphology -> boxes + red heat overlay. Both images are
+  capped at 2400 px. Sensitivity (Settings) selects threshold/min-area presets.
+- **Image mode UI**: mode toggle in the header (persisted as `mode`); one image per side (capture replaces, no "add region", no OCR). Text and image contents
+  of a panel are independent and both survive a mode switch. The comparison runs on the same single worker pool.
 - **CI**: the frozen exe is verified with `DocDiff.exe --selftest` (real OCR + headless UI), not only built.
 
 ## CI findings
@@ -35,6 +44,9 @@
 - Thresholds in `layout.py` are tuned on synthetic fixtures; real documents may need adjustment.
 - Hotkey conflict is reported at startup / after changing settings; hotkeys do not work while an elevated window has focus.
 
+- Image mode: very different zoom/perspective (photos of paper), or crops with almost no texture (blank areas), fall back to a plain resize; a different
+  font rendering / ClearType colour fringes can lower the score slightly even for the same text.
+
 ## Please test manually on Windows first
 
 1. Overlay on multi-monitor setups (different resolutions, monitor left of / above the primary): the selected rectangle must match the captured pixels.
@@ -43,3 +55,5 @@
 4. OCR quality on real Greek PDFs/Word web viewers, with and without the Greek OCR language installed.
 5. Table/multi-column reconstruction on real documents.
 6. SmartScreen: the unsigned exe may show a warning on first start.
+7. Image mode: capture the same page twice with a slightly different selection (shift/zoom) -> ~100%, no boxes; edit one word -> one box around it;
+   toggle heat map and dark theme; check the frozen exe's `--selftest` reports `image: OK`.

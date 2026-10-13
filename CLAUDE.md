@@ -23,13 +23,14 @@ No linter is configured. Tests marked `windows_ocr` only run on Windows.
 
 ## Architecture
 
-Data flow: `capture.py` (mss screenshots) / `ui/overlay.py` (region selection) -> `imaging.preprocess` -> `ocr/` engine -> `layout.reconstruct_text` -> user-editable text boxes -> `normalize` + `diffing` -> `ui/diff_view.py`. `pipeline.image_to_text` is the glue from image to text.
+Data flow (text mode; image mode skips OCR and goes straight to `imagediff.compare_images`): `capture.py` (mss screenshots) / `ui/overlay.py` (region selection) -> `imaging.preprocess` -> `ocr/` engine -> `layout.reconstruct_text` -> user-editable text boxes -> `normalize` + `diffing` -> `ui/diff_view.py`. `pipeline.image_to_text` is the glue from image to text.
 
 - **OCR abstraction** (`docdiff/ocr/`): `OcrEngine` interface returns word boxes + language; `WindowsOcrEngine` (winrt), `StubOcrEngine` (canned fixtures, picks by `synthetic.py`), non-Windows default. Layout is reconstructed from word boxes, not from OCR's own line output.
 - **Layout** (`layout.py`): words -> rows -> columns/cells -> table rows rendered as `a | b | c`, or multi-column prose read column by column. Thresholds are heuristics tuned on synthetic fixtures.
 - **Diff** (`diffing.py`, `normalize.py`): if both texts contain ` | ` table rows, lines are aligned and paired rows are diffed cell by cell; otherwise a flat word diff (`difflib.SequenceMatcher` on normalised keys). Normalisation strips Greek accents and folds final sigma, but display text is never altered.
 - **Platform code** (`platform_win.py`): DPI v2 and `RegisterHotKey`, guarded to no-op off Windows. Hotkeys come via a Qt native event filter for `WM_HOTKEY`.
 - **Overlay**: screenshots all monitors after hiding the main window, crop computed by ratio of screenshot pixels to widget size (DPI independent); Qt screens matched to mss monitors by geometry.
+- **Image mode** (`imagediff.py`): second mode toggled in the header; skips OCR and compares the two captures as images (ORB+RANSAC alignment, content-masked SSIM, changed-region boxes/heat map). Pure numpy/opencv + PIL, no Qt; run on the same worker pool via `_ImageJob`. Both modes report a similarity % (`DiffStats.similarity` / `ImageDiffResult.similarity`).
 - **Multiple regions**: a single FIFO OCR worker thread keeps appended captures in order.
 
 ## Gotchas

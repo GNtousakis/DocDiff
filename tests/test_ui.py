@@ -165,3 +165,71 @@ def test_geometry_remembered(qapp, store):
     w2 = make_window(qapp, store)
     w2.show()
     assert (w2.width(), w2.height()) == size
+
+
+def _doc(text_lines, offset=(0, 0)):
+    from PIL import ImageDraw, ImageFont
+
+    img = Image.new("RGB", (700, 300), "white")
+    d = ImageDraw.Draw(img)
+    font = ImageFont.load_default(size=26)
+    for i, line in enumerate(text_lines):
+        d.text((30 + offset[0], 25 + offset[1] + i * 50), line, fill="black", font=font)
+    return img
+
+
+LINES = ["Quarterly report invoice total", "Payment delivery agreement", "Customer reference number", "Approved by finance"]
+
+
+def test_image_mode_compare(qapp, store):
+    from docdiff.settings import MODE_IMAGE
+    from docdiff.imagediff import ImageDiffResult
+
+    w = make_window(qapp, store)
+    w.set_mode(MODE_IMAGE)
+    assert not w.btn_compare.isEnabled()
+    w.submit_image("A", _doc(LINES))
+    w.submit_image("B", _doc(LINES[:2] + ["Customer reference changed"] + LINES[3:], offset=(4, 3)))
+    assert w.panels["A"].has_image() and not w.panels["A"].has_text()  # no OCR in image mode
+    assert w.btn_compare.isEnabled()
+    w.compare()
+    assert w.wait_for_ocr()
+    assert isinstance(w.last_result, ImageDiffResult)
+    assert w.in_result and w.image_summary.isVisibleTo(w) and not w.diff_view.isVisibleTo(w)
+    assert 0 < w.last_result.similarity < 100
+    assert w.last_result.regions >= 1
+    assert w.image_summary.value.text().endswith("%")
+    w.toggle_theme()  # must not choke on an image result
+    w.toggle_theme()
+    w.image_summary.chk_heat.setChecked(False)
+    w.back_to_edit()
+    assert not w.in_result
+
+
+def test_mode_switch_keeps_both_contents_and_persists(qapp, store):
+    from docdiff.settings import MODE_IMAGE, MODE_TEXT
+
+    w = make_window(qapp, store)
+    w.submit_image("A", IMG)
+    w.wait_for_ocr()
+    text = w.panels["A"].text()
+    assert text
+    w.set_mode(MODE_IMAGE)
+    w.submit_image("A", IMG)
+    assert w.panels["A"].has_image()
+    w.set_mode(MODE_TEXT)
+    assert w.panels["A"].text() == text
+    w.set_mode(MODE_IMAGE)
+    assert w.panels["A"].has_image()
+    assert str(store.q.value("mode")) == MODE_IMAGE
+    assert make_window(qapp, store).mode == MODE_IMAGE
+
+
+def test_text_result_shows_similarity(qapp, store):
+    w = make_window(qapp, store)
+    w.submit_image("A", IMG)
+    w.submit_image("B", IMG)
+    w.wait_for_ocr()
+    w.compare()
+    assert w.diff_view.similarity.text().endswith("%")
+    assert not w.diff_view.similarity.text().startswith("100")  # table_v1 vs table_v2 differ

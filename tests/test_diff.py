@@ -99,3 +99,21 @@ def test_table_cell_text_reflow_in_paragraph_lines():
     a = "Εισαγωγή\nΤο κείμενο εδώ\nΕίδος | Τιμή\nΜήλα | 1"
     b = "Εισαγωγή\nΤο κείμενο  εδώ\nΕίδος | Τιμή\nΜήλα | 1"
     assert diff_texts(a, b).stats.total == 0
+
+
+def test_similarity_identical_and_empty():
+    assert diff_texts("a b c", "a b c").stats.similarity == 100.0
+    assert diff_texts("", "").stats.similarity == 100.0
+    assert diff_texts("a b c", "").stats.similarity == 0.0
+
+
+def test_similarity_one_word_changed():
+    s = diff_texts("one two three four", "one two three five").stats.similarity
+    assert s == 75.0
+
+
+def test_similarity_table_rows():
+    a = "Name | Qty | Price\nApple | 3 | 1.20\nPear | 2 | 0.90"
+    b = "Name | Qty | Price\nApple | 3 | 1.50\nPear | 2 | 0.90"
+    s = diff_texts(a, b).stats.similarity
+    assert 80 < s < 100

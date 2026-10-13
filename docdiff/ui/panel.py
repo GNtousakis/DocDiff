@@ -14,7 +14,9 @@ from PySide6.QtWidgets import (
 
 from docdiff import strings
 from docdiff.regions import append_text, remove_region_text
+from docdiff.settings import MODE_IMAGE, MODE_TEXT
 from docdiff.ui import theme
+from docdiff.ui.image_view import ImageView
 from docdiff.ui.overlay import pil_to_qimage
 
 THUMB_SIZE = (96, 64)
@@ -31,6 +33,7 @@ class Region:
 class Panel(QFrame):
     capture_requested = Signal(str, bool)  # side, append
     text_changed = Signal()
+    image_changed = Signal()
 
     _ids = count(1)
 
@@ -39,6 +42,9 @@ class Panel(QFrame):
         self.side = side
         self.setObjectName("panel")
         self.regions: list[Region] = []
+        self.mode = MODE_TEXT
+        self._image: Image.Image | None = None  # image mode: the single captured region
+        self._in_result = False
 
         self.title = QLabel(title)
         self.title.setObjectName("panelTitle")
@@ -88,6 +94,8 @@ class Panel(QFrame):
         self.body = QStackedWidget()
         self.body.addWidget(self.edit)
         self.body.addWidget(self.diff)
+        self.image_view = ImageView()
+        self.body.addWidget(self.image_view)
         self.actions = QWidget()
         buttons = QHBoxLayout(self.actions)
         buttons.setContentsMargins(0, 0, 0, 0)
@@ -137,11 +145,33 @@ class Panel(QFrame):
         p.end()
 
     def set_result_mode(self, on: bool) -> None:
-        self.body.setCurrentIndex(1 if on else 0)
-        self.actions.setVisible(not on)
-        self.btn_clear.setVisible(not on)
-        self.thumbs_scroll.setVisible(not on and bool(self.regions))
-        self.no_regions.setVisible(not on and not self.regions)
+        self._in_result = on
+        self._refresh_body()
+
+    def set_mode(self, mode: str) -> None:
+        """Switch between OCR text and image capture; the other mode's content is kept untouched."""
+        self.mode = mode
+        image = mode == MODE_IMAGE
+        self.btn_add.setVisible(not image)
+        self.words.setVisible(not image)
+        self.chars.setVisible(not image)
+        self.set_status("")
+        self._refresh_body()
+
+    def _refresh_body(self) -> None:
+        image = self.mode == MODE_IMAGE
+        self.body.setCurrentIndex(2 if image else (1 if self._in_result else 0))
+        if image and not self._in_result:
+            self._show_capture()
+        self.actions.setVisible(not self._in_result)
+        self.btn_clear.setVisible(not self._in_result)
+        self._refresh_thumbs_visibility()
+
+    def _show_capture(self) -> None:
+        if self._image is not None:
+            self.image_view.set_image(self._image)
+        else:
+            self.image_view.clear_image()
 
     def _update_counts(self) -> None:
         text = self.text()
@@ -155,6 +185,22 @@ class Panel(QFrame):
 
     def has_text(self) -> bool:
         return bool(self.text().strip())
+
+    def image(self) -> Image.Image | None:
+        return self._image
+
+    def has_image(self) -> bool:
+        return self._image is not None
+
+    def set_image(self, image: Image.Image) -> None:
+        """Image mode: store the capture (replacing any previous one) and show it."""
+        self._image = image
+        self._show_capture()
+        self.set_status(strings.INFO_CAPTURED)
+        self.image_changed.emit()
+
+    def show_overlay(self, image: Image.Image) -> None:
+        self.image_view.set_image(image)
 
     def set_status(self, message: str, level: str = "info") -> None:
         self.status.setText(message)
@@ -197,6 +243,12 @@ class Panel(QFrame):
         self.set_status(message, "error")
 
     def clear(self) -> None:
+        if self.mode == MODE_IMAGE:
+            self._image = None
+            self._show_capture()
+            self.set_status("")
+            self.image_changed.emit()
+            return
         for r in self.regions:
             self._drop_widget(r)
         self.regions.clear()
@@ -231,9 +283,9 @@ class Panel(QFrame):
 
     def _refresh_thumbs_visibility(self) -> None:
         has = bool(self.regions)
-        in_result = self.body.currentIndex() == 1
-        self.thumbs_scroll.setVisible(has and not in_result)
-        self.no_regions.setVisible(not has and not in_result)
+        show = self.mode == MODE_TEXT and not self._in_result
+        self.thumbs_scroll.setVisible(has and show)
+        self.no_regions.setVisible(not has and show)
 
     def _make_thumb(self, rid: int, image: Image.Image):
         frame = QFrame()

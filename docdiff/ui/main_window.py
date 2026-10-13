@@ -3,16 +3,17 @@ from __future__ import annotations
 from PIL import Image
 from PySide6.QtCore import QRunnable, QObject, QThreadPool, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from docdiff import strings
-from docdiff.diffing import diff_texts
+from docdiff.diffing import DiffResult, diff_texts
+from docdiff.imagediff import ImageDiffOptions, ImageDiffResult, compare_images, render_overlay
 from docdiff.ocr.base import OcrEngine
 from docdiff.pipeline import image_to_text
 from docdiff.platform_win import IS_WINDOWS
-from docdiff.settings import AppSettings, SettingsStore
-from docdiff.ui.diff_view import DiffView
+from docdiff.settings import MODE_IMAGE, MODE_TEXT, AppSettings, SettingsStore
+from docdiff.ui.diff_view import DiffView, ImageSummary
 from docdiff.ui.hotkeys import HotkeyManager
 from docdiff.ui.overlay import CaptureController
 from docdiff.ui.panel import Panel
@@ -25,6 +26,8 @@ HIDE_DELAY_MS = 300  # let the window finish disappearing before the screenshot
 class _OcrSignals(QObject):
     done = Signal(str, int, str, bool)  # side, region id, text, language_fallback
     failed = Signal(str, int, str)
+    image_done = Signal(object)  # ImageDiffResult
+    image_failed = Signal(str)
 
 
 class _OcrJob(QRunnable):
@@ -39,6 +42,20 @@ class _OcrJob(QRunnable):
             self.signals.failed.emit(self.side, self.rid, str(exc) or type(exc).__name__)
         else:
             self.signals.done.emit(self.side, self.rid, out.text, out.language_fallback)
+
+
+class _ImageJob(QRunnable):
+    def __init__(self, a: Image.Image, b: Image.Image, options: ImageDiffOptions, signals: _OcrSignals):
+        super().__init__()
+        self.a, self.b, self.options, self.signals = a, b, options, signals
+
+    def run(self) -> None:
+        try:
+            result = compare_images(self.a, self.b, self.options)
+        except Exception as exc:
+            self.signals.image_failed.emit(str(exc) or type(exc).__name__)
+        else:
+            self.signals.image_done.emit(result)
 
 
 class MainWindow(QMainWindow):
@@ -60,6 +77,11 @@ class MainWindow(QMainWindow):
         self._signals = _OcrSignals(self)
         self._signals.done.connect(self._on_ocr_done)
         self._signals.failed.connect(self._on_ocr_failed)
+        self._signals.image_done.connect(self._on_image_done)
+        self._signals.image_failed.connect(self._on_image_failed)
+        saved_mode = str(store.q.value("mode", MODE_TEXT))
+        self.mode = saved_mode if saved_mode in (MODE_TEXT, MODE_IMAGE) else MODE_TEXT
+        self._image_job_running = False
 
         self.capture = CaptureController(self)
         self.capture.captured.connect(self._on_captured)
@@ -73,6 +95,7 @@ class MainWindow(QMainWindow):
         for p in self.panels.values():
             p.capture_requested.connect(self.start_capture)
             p.text_changed.connect(self._update_compare_enabled)
+            p.image_changed.connect(self._update_compare_enabled)
 
         self.btn_compare = QPushButton(strings.BTN_COMPARE)
         self.btn_compare.setObjectName("primary")
@@ -107,10 +130,26 @@ class MainWindow(QMainWindow):
         nl.setContentsMargins(20, 8, 20, 8)
         nl.addWidget(brand)
         nl.addWidget(sub, 1)
+        self.mode_buttons = {}
+        group = QButtonGroup(self)
+        group.setExclusive(True)
+        for mode, label in ((MODE_TEXT, strings.MODE_TEXT), (MODE_IMAGE, strings.MODE_IMAGE)):
+            btn = QPushButton(label)
+            btn.setObjectName("segment")
+            btn.setCheckable(True)
+            btn.setChecked(mode == self.mode)
+            btn.clicked.connect(lambda _=False, m=mode: self.set_mode(m))
+            group.addButton(btn)
+            self.mode_buttons[mode] = btn
+            nl.addWidget(btn)
+        nl.addSpacing(12)
         nl.addWidget(self.btn_theme)
         nl.addWidget(self.btn_settings)
 
         self.diff_view = DiffView(self.panels["A"].diff, self.panels["B"].diff)
+        self.image_summary = ImageSummary()
+        self.image_summary.setVisible(False)
+        self.image_summary.heat_toggled.connect(lambda _on: self._render_image_result())
         self.btn_back = QPushButton(strings.BTN_EDIT)
         self.btn_back.clicked.connect(self.back_to_edit)
         self.hint = QLabel(strings.HINT_ADD_TEXT)
@@ -128,6 +167,7 @@ class MainWindow(QMainWindow):
         middle.addWidget(self.btn_compare)
         middle.addWidget(self.hint)
         middle.addWidget(self.diff_view)
+        middle.addWidget(self.image_summary)
         middle.addWidget(self.btn_back)
         middle.addStretch(1)
         row = QHBoxLayout()
@@ -155,6 +195,10 @@ class MainWindow(QMainWindow):
         outer.addLayout(body, 1)
         self.setCentralWidget(central)
 
+        for p in self.panels.values():
+            p.set_mode(self.mode)
+        self._refresh_mode_texts()
+
         self.hotkeys = hotkeys
         if hotkeys is not None:
             hotkeys.triggered.connect(lambda side: self.start_capture(side, False))
@@ -170,7 +214,7 @@ class MainWindow(QMainWindow):
         self.store.q.setValue("theme", theme.current())
         QApplication.instance().setStyleSheet(theme.build_stylesheet())
         self._refresh_theme_button()
-        if self.last_result is not None:
+        if isinstance(self.last_result, DiffResult):
             self.diff_view.show_result(self.last_result)
 
     # --- notices ----------------------------------------------------
@@ -241,8 +285,11 @@ class MainWindow(QMainWindow):
         self.submit_image(side, image, replace=not append)
 
     def submit_image(self, side: str, image: Image.Image, replace: bool = True) -> int:
-        """Register a captured image on a panel and queue OCR for it."""
+        """Register a captured image on a panel; in text mode queue OCR for it (returns the region id)."""
         panel = self.panels[side]
+        if self.mode == MODE_IMAGE:
+            panel.set_image(image)
+            return 0
         rid = panel.begin_region(image, replace)
         self.pool.start(_OcrJob(self.engine, side, rid, image, self._signals))
         return rid
@@ -264,12 +311,36 @@ class MainWindow(QMainWindow):
         return ok
 
     # --- compare / settings -------------------------------------------
+    def set_mode(self, mode: str) -> None:
+        if mode == self.mode:
+            return
+        if self.in_result:
+            self._set_result_mode(False)
+        self.last_result = None
+        self.mode = mode
+        self.store.q.setValue("mode", mode)
+        self.mode_buttons[mode].setChecked(True)
+        for p in self.panels.values():
+            p.set_mode(mode)
+        self._refresh_mode_texts()
+        self._update_compare_enabled()
+
+    def _refresh_mode_texts(self) -> None:
+        self.hint.setText(strings.HINT_ADD_IMAGE if self.mode == MODE_IMAGE else strings.HINT_ADD_TEXT)
+        self._update_compare_enabled()
+
     def _update_compare_enabled(self) -> None:
-        ok = all(p.has_text() for p in self.panels.values())
+        if self.mode == MODE_IMAGE:
+            ok = all(p.has_image() for p in self.panels.values()) and not self._image_job_running
+        else:
+            ok = all(p.has_text() for p in self.panels.values())
         self.btn_compare.setEnabled(ok)
         self.hint.setVisible(not ok and not self.in_result)
 
     def compare(self) -> None:
+        if self.mode == MODE_IMAGE:
+            self._compare_images()
+            return
         a, b = self.panels["A"].text(), self.panels["B"].text()
         if not (a.strip() and b.strip()):
             self.panels["A"].set_status(strings.ERR_COMPARE_EMPTY, "warn")
@@ -278,13 +349,50 @@ class MainWindow(QMainWindow):
         self.diff_view.show_result(self.last_result)
         self._set_result_mode(True)
 
+    def _compare_images(self) -> None:
+        a, b = self.panels["A"].image(), self.panels["B"].image()
+        if a is None or b is None:
+            self.panels["A"].set_status(strings.ERR_COMPARE_NO_IMAGE, "warn")
+            return
+        options = ImageDiffOptions.from_sensitivity(self.settings.image_sensitivity)
+        self._image_job_running = True
+        self._update_compare_enabled()
+        for p in self.panels.values():
+            p.set_status(strings.INFO_COMPARING)
+        self.pool.start(_ImageJob(a, b, options, self._signals))
+
+    def _on_image_done(self, result: ImageDiffResult) -> None:
+        self._image_job_running = False
+        for p in self.panels.values():
+            p.set_status("")
+        if self.mode != MODE_IMAGE:  # user switched mode while it ran
+            return
+        self.last_result = result
+        self.image_summary.show_result(result)
+        self._set_result_mode(True)
+        self._render_image_result()
+
+    def _on_image_failed(self, detail: str) -> None:
+        self._image_job_running = False
+        self._update_compare_enabled()
+        self.panels["A"].set_status(strings.ERR_IMAGE_COMPARE_FAILED.format(detail=detail), "error")
+
+    def _render_image_result(self) -> None:
+        r = self.last_result
+        if not isinstance(r, ImageDiffResult):
+            return
+        heat = r.heat if self.image_summary.heat_enabled() else None
+        self.panels["A"].show_overlay(render_overlay(r.a, r.boxes, heat))
+        self.panels["B"].show_overlay(render_overlay(r.b, r.boxes, heat))
+
     def _set_result_mode(self, on: bool) -> None:
         self.in_result = on
         for p in self.panels.values():
             p.set_result_mode(on)
         self.btn_compare.setVisible(not on)
         self.hint.setVisible(not on and not self.btn_compare.isEnabled())
-        self.diff_view.setVisible(on)
+        self.diff_view.setVisible(on and self.mode == MODE_TEXT)
+        self.image_summary.setVisible(on and self.mode == MODE_IMAGE)
         self.btn_back.setVisible(on)
 
     def back_to_edit(self) -> None:

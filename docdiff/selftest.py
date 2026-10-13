@@ -107,6 +107,28 @@ def check_ui(log) -> bool:
     return stats.changed == 2 and stats.added == 0 and stats.removed == 0
 
 
+def check_image(log) -> bool:
+    """Image diff end to end (verifies numpy/opencv are bundled and ORB alignment works)."""
+    from docdiff.imagediff import compare_images
+
+    def page(lines: list[str]) -> Image.Image:
+        img = Image.new("RGB", (900, 300), "white")
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.load_default(size=32)  # no system font needed
+        for i, line in enumerate(lines):
+            draw.text((30, 20 + i * 60), line, fill="black", font=font)
+        return img
+
+    lines = ENGLISH_LINES + ["Customer reference number 88231"]
+    a = page(lines)
+    b = page(lines[:2] + ["Customer reference number 99999"])
+    same = compare_images(a, a.copy())
+    changed = compare_images(a, b)
+    log(f"Image diff: identical={same.similarity:.1f}% changed={changed.similarity:.1f}% "
+        f"boxes={len(changed.boxes)} aligned={changed.aligned}")
+    return same.similarity > 99 and not same.boxes and changed.similarity < same.similarity and bool(changed.boxes)
+
+
 def run_selftest(out_path: str | None = None) -> int:
     import faulthandler
 
@@ -127,7 +149,7 @@ def run_selftest(out_path: str | None = None) -> int:
                 print(msg.encode("ascii", "backslashreplace").decode(), flush=True)
 
     ok = True
-    for name, fn in (("ocr", check_ocr), ("ui", check_ui)):
+    for name, fn in (("ocr", check_ocr), ("ui", check_ui), ("image", check_image)):
         try:
             if name == "ocr":  # same threading model as the app: OCR on a worker thread
                 from concurrent.futures import ThreadPoolExecutor

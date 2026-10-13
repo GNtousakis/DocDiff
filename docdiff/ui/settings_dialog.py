@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QKeySequenceEdit, QLabel, QMessageBox, QVBoxLayout,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QKeySequenceEdit, QLabel, QMessageBox, QVBoxLayout,
 )
 
 from docdiff import strings
@@ -21,12 +21,16 @@ class SettingsDialog(QDialog):
         self.chk_case.setChecked(settings.ignore_case)
         self.chk_punct = QCheckBox(strings.SETTINGS_IGNORE_PUNCT)
         self.chk_punct.setChecked(settings.ignore_punctuation)
+        self.sensitivity = QComboBox()
+        self.sensitivity.addItems(strings.SENSITIVITY_LEVELS)
+        self.sensitivity.setCurrentIndex(settings.image_sensitivity)
         hint = QLabel(strings.SETTINGS_HOTKEY_HINT)
         hint.setObjectName("status")
         form = QFormLayout()
         form.setVerticalSpacing(12)
         form.addRow(strings.SETTINGS_HOTKEY_A, self.edit_a)
         form.addRow(strings.SETTINGS_HOTKEY_B, self.edit_b)
+        form.addRow(strings.SETTINGS_IMAGE_SENSITIVITY, self.sensitivity)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText(strings.SETTINGS_OK)
         buttons.button(QDialogButtonBox.Cancel).setText(strings.SETTINGS_CANCEL)
@@ -61,5 +65,5 @@ class SettingsDialog(QDialog):
         if a.upper() == b.upper():
             QMessageBox.warning(self, strings.MSG_TITLE_WARNING, strings.ERR_HOTKEY_SAME)
             return
-        self.result_settings = AppSettings(a, b, self.chk_case.isChecked(), self.chk_punct.isChecked())
+        self.result_settings = AppSettings(a, b, self.chk_case.isChecked(), self.chk_punct.isChecked(), self.sensitivity.currentIndex())
         self.accept()

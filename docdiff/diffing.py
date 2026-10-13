@@ -22,15 +22,27 @@ class DiffStats:
     added: int = 0
     removed: int = 0
     changed: int = 0
+    matched: int = 0  # compared words present in both texts
+    words_a: int = 0  # compared words per side (punctuation-only tokens excluded)
+    words_b: int = 0
 
     @property
     def total(self) -> int:
         return self.added + self.removed + self.changed
 
+    @property
+    def similarity(self) -> float:
+        """0..100, ``2 * matched / (words_a + words_b)`` (the SequenceMatcher ratio)."""
+        n = self.words_a + self.words_b
+        return 100.0 if n == 0 else 100.0 * 2 * self.matched / n
+
     def add(self, other: "DiffStats") -> None:
         self.added += other.added
         self.removed += other.removed
         self.changed += other.changed
+        self.matched += other.matched
+        self.words_a += other.words_a
+        self.words_b += other.words_b
 
 
 @dataclass
@@ -106,9 +118,10 @@ def diff_words(a: str, b: str, options: CompareOptions = CompareOptions()) -> Di
     kb = [tb[i].key for i in ib]
     kinds_a: dict[int, str] = {}
     kinds_b: dict[int, str] = {}
-    stats = DiffStats()
+    stats = DiffStats(words_a=len(ka), words_b=len(kb))
     for tag, i1, i2, j1, j2 in _matcher(ka, kb).get_opcodes():
         if tag == "equal":
+            stats.matched += i2 - i1
             continue
         if tag == "delete":
             stats.removed += 1
@@ -205,9 +218,11 @@ def _structured_diff(a: str, b: str, options: CompareOptions) -> DiffResult:
         elif i is not None:
             res.left += _whole_line(la[i], REMOVED)
             res.stats.removed += 1
+            res.stats.words_a += len(ka[i])
         elif j is not None:
             res.right += _whole_line(lb[j], ADDED)
             res.stats.added += 1
+            res.stats.words_b += len(kb[j])
         # newline handling: each side gets a newline only for lines it actually has
         if i is not None or pair_res is not None:
             res.left.append(Segment("\n"))
@@ -217,7 +232,8 @@ def _structured_diff(a: str, b: str, options: CompareOptions) -> DiffResult:
     for tag, i1, i2, j1, j2 in _matcher(["\x00".join(k) for k in ka], ["\x00".join(k) for k in kb]).get_opcodes():
         if tag == "equal":
             for i, j in zip(range(i1, i2), range(j1, j2)):
-                emit(i, j, DiffResult(_whole_line(la[i], EQUAL), _whole_line(lb[j], EQUAL)))
+                same = DiffStats(matched=len(ka[i]), words_a=len(ka[i]), words_b=len(kb[j]))
+                emit(i, j, DiffResult(_whole_line(la[i], EQUAL), _whole_line(lb[j], EQUAL), same))
             continue
         pairs = _align_lines(ka[i1:i2], kb[j1:j2])
         for pi, pj in pairs:

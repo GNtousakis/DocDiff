@@ -107,6 +107,11 @@ QPushButton#ghost {{ border: 1px solid transparent; color: {p['accent']}; paddin
 QPushButton#small {{ padding: 2px 8px; font-size: 12px; }}
 QPlainTextEdit, QTextEdit {{ border: 1px solid {p['divider']}; border-radius: 0; padding: 10px 14px; background: {p['surface']}; font-family: {body}; font-size: 14px; selection-background-color: {p['accent']}; selection-color: {p['on_accent']}; }}
 QPlainTextEdit:focus {{ border-color: {p['accent']}; }}
+QLabel#similarity {{ font-family: {head}; font-size: 40px; font-weight: 600; color: {p['letter']}; }}
+QLabel#similarityCaption {{ color: {p['muted']}; font-size: 10px; font-weight: 500; letter-spacing: 1px; }}
+QLabel#imageView {{ border: 1px solid {p['divider']}; background: {p['surface']}; color: {p['muted']}; font-size: 13px; }}
+QPushButton#segment {{ padding: 4px 14px; font-size: 13px; }}
+QPushButton#segment:checked {{ background: {p['accent']}; color: {p['on_accent']}; border: 1px solid {p['accent']}; }}
 QFrame#thumb {{ border: 1px solid {p['divider']}; border-radius: 0; background: {p['bg']}; }}
 """
 
