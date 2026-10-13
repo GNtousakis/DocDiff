@@ -122,7 +122,10 @@ def run_selftest(out_path: str | None = None) -> int:
             out.write(msg + "\n")
             out.flush()
         if sys.stdout:
-            print(msg, flush=True)
+            try:
+                print(msg, flush=True)
+            except UnicodeEncodeError:  # legacy Windows console code page
+                print(msg.encode("ascii", "backslashreplace").decode(), flush=True)
 
     ok = True
     for name, fn in (("ocr", check_ocr), ("ui", check_ui)):
