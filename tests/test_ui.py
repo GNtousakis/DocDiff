@@ -58,8 +58,8 @@ def test_compare_shows_summary_and_highlights(qapp, store):
     w.submit_image("B", IMG)
     w.wait_for_ocr()
     w.compare()
-    assert w.stack.currentIndex() == 1
-    assert "2" in w.diff_view.summary.text()
+    assert w.in_result
+    assert w.diff_view.counts["changed"].text() == "2"
     assert w.last_result.stats.changed == 2
 
 
@@ -124,7 +124,7 @@ def test_ocr_failure_message(qapp, store):
 def test_stub_mode_banner_shown(qapp, store):
     w = make_window(qapp, store)
     w.show()
-    assert w.banner.isVisible()
+    assert w.banner_box.isVisible()
 
 
 def test_language_fallback_banner(qapp, store):

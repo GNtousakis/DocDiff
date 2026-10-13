@@ -3,7 +3,7 @@ from __future__ import annotations
 from PIL import Image
 from PySide6.QtCore import QRunnable, QObject, QThreadPool, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget,
+    QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from docdiff import strings
@@ -16,6 +16,7 @@ from docdiff.ui.diff_view import DiffView
 from docdiff.ui.hotkeys import HotkeyManager
 from docdiff.ui.overlay import CaptureController
 from docdiff.ui.panel import Panel
+from docdiff.ui import theme
 from docdiff.ui.settings_dialog import SettingsDialog
 
 HIDE_DELAY_MS = 300  # let the window finish disappearing before the screenshot
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         self.engine = engine
         self.store = store
         self.settings: AppSettings = store.load()
+        theme.set_theme(str(store.q.value("theme", theme.current())))
         self.show_dialogs = show_dialogs
         self.setWindowTitle(strings.WINDOW_TITLE)
         self.resize(1200, 760)
@@ -82,45 +84,75 @@ class MainWindow(QMainWindow):
         self.banner = QLabel("")
         self.banner.setObjectName("banner")
         self.banner.setWordWrap(True)
-        self.banner.setVisible(False)
+        self.banner_box = QFrame()
+        self.banner_box.setObjectName("bannerBox")
+        tag = QLabel(strings.DEMO_TAG.upper())
+        tag.setObjectName("bannerTag")
+        bl = QHBoxLayout(self.banner_box)
+        bl.setContentsMargins(10, 6, 10, 6)
+        bl.addWidget(tag, 0, Qt.AlignTop)
+        bl.addWidget(self.banner, 1)
+        self.banner_box.setVisible(False)
 
-        middle = QVBoxLayout()
+        self.btn_theme = QPushButton()
+        self.btn_theme.clicked.connect(self.toggle_theme)
+        self._refresh_theme_button()
+        brand = QLabel(strings.APP_NAME)
+        brand.setObjectName("brand")
+        sub = QLabel(strings.APP_SUBTITLE)
+        sub.setObjectName("brandSub")
+        nav = QFrame()
+        nav.setObjectName("nav")
+        nl = QHBoxLayout(nav)
+        nl.setContentsMargins(20, 8, 20, 8)
+        nl.addWidget(brand)
+        nl.addWidget(sub, 1)
+        nl.addWidget(self.btn_theme)
+        nl.addWidget(self.btn_settings)
+
+        self.diff_view = DiffView(self.panels["A"].diff, self.panels["B"].diff)
+        self.btn_back = QPushButton(strings.BTN_EDIT)
+        self.btn_back.clicked.connect(self.back_to_edit)
+        self.hint = QLabel(strings.HINT_ADD_TEXT)
+        self.hint.setObjectName("railHint")
+        self.hint.setWordWrap(True)
+        self.hint.setAlignment(Qt.AlignCenter)
+        self.diff_view.setVisible(False)
+        self.btn_back.setVisible(False)
+        rail = QWidget()
+        rail.setFixedWidth(168)
+        middle = QVBoxLayout(rail)
+        middle.setContentsMargins(0, 0, 0, 0)
+        middle.setSpacing(14)
         middle.addStretch(1)
         middle.addWidget(self.btn_compare)
-        middle.addSpacing(12)
-        middle.addWidget(self.btn_settings)
+        middle.addWidget(self.hint)
+        middle.addWidget(self.diff_view)
+        middle.addWidget(self.btn_back)
         middle.addStretch(1)
         row = QHBoxLayout()
-        row.setSpacing(16)
+        row.setSpacing(27)
         row.addWidget(self.panels["A"], 1)
-        row.addLayout(middle)
+        row.addWidget(rail)
         row.addWidget(self.panels["B"], 1)
-        edit_page = QWidget()
-        edit_lay = QVBoxLayout(edit_page)
+        page = QWidget()
+        edit_lay = QVBoxLayout(page)
         edit_lay.setContentsMargins(0, 0, 0, 0)
-        edit_lay.addWidget(self.banner)
+        edit_lay.addWidget(self.banner_box)
         edit_lay.addLayout(row, 1)
+        self.stack = page
+        self.in_result = False
 
-        self.diff_view = DiffView()
-        self.btn_back = QPushButton(strings.BTN_BACK)
-        self.btn_back.clicked.connect(lambda: self.stack.setCurrentIndex(0))
-        result_page = QWidget()
-        res_lay = QVBoxLayout(result_page)
-        res_lay.setContentsMargins(0, 0, 0, 0)
-        top = QHBoxLayout()
-        top.addWidget(self.btn_back)
-        top.addStretch(1)
-        res_lay.addLayout(top)
-        res_lay.addWidget(self.diff_view, 1)
-
-        self.stack = QStackedWidget()
-        self.stack.addWidget(edit_page)
-        self.stack.addWidget(result_page)
         central = QWidget()
         central.setObjectName("central")
-        lay = QVBoxLayout(central)
-        lay.setContentsMargins(20, 20, 20, 20)
-        lay.addWidget(self.stack)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(nav)
+        body = QVBoxLayout()
+        body.setContentsMargins(20, 27, 20, 20)
+        body.addWidget(self.stack)
+        outer.addLayout(body, 1)
         self.setCentralWidget(central)
 
         self.hotkeys = hotkeys
@@ -129,10 +161,22 @@ class MainWindow(QMainWindow):
             self.apply_hotkeys()
         self._show_engine_notices()
 
+    # --- theme ------------------------------------------------------
+    def _refresh_theme_button(self) -> None:
+        self.btn_theme.setText(strings.THEME_TO_LIGHT if theme.current() == "dark" else strings.THEME_TO_DARK)
+
+    def toggle_theme(self) -> None:
+        theme.set_theme("light" if theme.current() == "dark" else "dark")
+        self.store.q.setValue("theme", theme.current())
+        QApplication.instance().setStyleSheet(theme.build_stylesheet())
+        self._refresh_theme_button()
+        if self.last_result is not None:
+            self.diff_view.show_result(self.last_result)
+
     # --- notices ----------------------------------------------------
     def show_banner(self, message: str) -> None:
-        self.banner.setText(message if not self.banner.isVisible() else self.banner.text() + "\n\n" + message)
-        self.banner.setVisible(True)
+        self.banner.setText(message if not self.banner_box.isVisible() else self.banner.text() + "\n\n" + message)
+        self.banner_box.setVisible(True)
 
     def _notify(self, message: str, error: bool = False) -> None:
         if self.show_dialogs:
@@ -221,7 +265,9 @@ class MainWindow(QMainWindow):
 
     # --- compare / settings -------------------------------------------
     def _update_compare_enabled(self) -> None:
-        self.btn_compare.setEnabled(all(p.has_text() for p in self.panels.values()))
+        ok = all(p.has_text() for p in self.panels.values())
+        self.btn_compare.setEnabled(ok)
+        self.hint.setVisible(not ok and not self.in_result)
 
     def compare(self) -> None:
         a, b = self.panels["A"].text(), self.panels["B"].text()
@@ -230,7 +276,19 @@ class MainWindow(QMainWindow):
             return
         self.last_result = diff_texts(a, b, self.settings.compare_options)
         self.diff_view.show_result(self.last_result)
-        self.stack.setCurrentIndex(1)
+        self._set_result_mode(True)
+
+    def _set_result_mode(self, on: bool) -> None:
+        self.in_result = on
+        for p in self.panels.values():
+            p.set_result_mode(on)
+        self.btn_compare.setVisible(not on)
+        self.hint.setVisible(not on and not self.btn_compare.isEnabled())
+        self.diff_view.setVisible(on)
+        self.btn_back.setVisible(on)
+
+    def back_to_edit(self) -> None:
+        self._set_result_mode(False)
 
     def open_settings(self) -> None:
         dlg = SettingsDialog(self.settings, self)

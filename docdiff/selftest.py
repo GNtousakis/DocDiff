@@ -99,9 +99,8 @@ def check_ui(log) -> bool:
     win.submit_image("B", Image.new("RGB", (300, 100), "white"))
     win.wait_for_ocr()
     win.compare()
-    summary = win.diff_view.summary.text()
-    log(f"UI compare summary: {summary}")
     stats = win.last_result.stats
+    log(f"UI compare summary: added={stats.added} removed={stats.removed} changed={stats.changed}")
     win.close()
     win.deleteLater()
     app.processEvents()
