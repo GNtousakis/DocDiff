@@ -109,22 +109,34 @@ def check_ui(log) -> bool:
 
 
 def run_selftest(out_path: str | None = None) -> int:
-    lines: list[str] = []
+    import faulthandler
+
+    out = open(out_path, "w", encoding="utf-8", buffering=1) if out_path else None
+    if out:
+        faulthandler.enable(out)
 
     def log(msg: str) -> None:
-        lines.append(msg)
-        print(msg, flush=True) if sys.stdout else None
+        if out:
+            out.write(msg + "\n")
+            out.flush()
+        if sys.stdout:
+            print(msg, flush=True)
 
     ok = True
     for name, fn in (("ocr", check_ocr), ("ui", check_ui)):
         try:
-            res = fn(log)
+            if name == "ocr":  # same threading model as the app: OCR on a worker thread
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(1) as ex:
+                    res = ex.submit(fn, log).result()
+            else:
+                res = fn(log)
         except Exception:
             log(f"EXCEPTION in {name}:\n{traceback.format_exc()}")
             res = False
         log(f"{name}: {'OK' if res else 'FAILED'}")
         ok &= bool(res)
-    if out_path:
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+    if out:
+        out.close()
     return 0 if ok else 1

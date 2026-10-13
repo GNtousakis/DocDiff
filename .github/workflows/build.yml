@@ -34,12 +34,6 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
 
-      - name: Try to install the Greek OCR language (optional)
-        shell: pwsh
-        continue-on-error: true
-        timeout-minutes: 3
-        run: Add-WindowsCapability -Online -Name "Language.OCR~~~el-GR~0.0.1.0"
-
       - name: Unit tests + Windows OCR smoke test
         run: python -m pytest -v -rs
         env:
