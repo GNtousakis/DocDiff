@@ -111,6 +111,8 @@ def check_ui(log) -> bool:
 def run_selftest(out_path: str | None = None) -> int:
     import faulthandler
 
+    import PySide6.QtWidgets  # noqa: F401  (must load before winrt, see ocr/windows.py)
+
     out = open(out_path, "w", encoding="utf-8", buffering=1) if out_path else None
     if out:
         faulthandler.enable(out)

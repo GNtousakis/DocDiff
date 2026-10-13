@@ -15,10 +15,20 @@ GREEK_TAGS = ("el-GR", "el")
 FALLBACK_TAGS = ("en-US", "en-GB", "en")
 
 
+def _load_qt_first() -> None:
+    """Import Qt before any winrt extension: loading winrt first makes a later Qt import
+    crash with an access violation on Windows (DLL load-order conflict)."""
+    try:
+        import PySide6.QtWidgets  # noqa: F401
+    except ImportError:
+        pass
+
+
 def is_supported() -> bool:
     """True when the winrt OCR projections can be imported (Windows only)."""
     if sys.platform != "win32":
         return False
+    _load_qt_first()
     try:
         import winrt.windows.media.ocr  # noqa: F401
     except Exception:
@@ -27,6 +37,7 @@ def is_supported() -> bool:
 
 
 def _import_winrt():
+    _load_qt_first()
     from winrt.windows.globalization import Language
     from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat
     from winrt.windows.media.ocr import OcrEngine as WinOcrEngine
