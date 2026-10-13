@@ -104,7 +104,7 @@ class WindowsOcrEngine(OcrEngine):
         writer.detach_stream()
         stream.seek(0)
         decoder = await BitmapDecoder.create_async(stream)
-        bitmap = await decoder.get_software_bitmap_with_alpha_async(
+        bitmap = await decoder.get_software_bitmap_converted_async(
             BitmapPixelFormat.BGRA8, BitmapAlphaMode.PREMULTIPLIED
         )
         result = await self._engine.recognize_async(bitmap)
