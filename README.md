@@ -42,9 +42,8 @@ for Qt (use `QT_QPA_PLATFORM=offscreen` for headless runs).
 
 ## How the GitHub Actions build works
 
-The `windows` job (windows-latest): installs dependencies, optionally tries to install the Greek OCR capability,
-runs the full pytest suite (including a smoke test that renders Greek and English text with Pillow and OCRs it with
-the real Windows engine; if Greek OCR is not installed it logs a warning and checks English only), runs
+The `windows` job (windows-latest): installs dependencies, runs the full pytest suite (including a smoke test that renders Greek and English text with Pillow and OCRs it with
+the real Windows engine; the hosted runner only has English OCR, so Greek is skipped with a logged warning and English is checked), runs
 `python -m docdiff --selftest`, builds the one-file windowed exe with PyInstaller (`tools/build_exe.py`, which
 collects the `winrt` packages), then runs `DocDiff.exe --selftest` to prove the winrt projections and Qt are bundled
 correctly, and uploads `DocDiff.exe`. A `linux-stub` job runs the tests in stub mode.

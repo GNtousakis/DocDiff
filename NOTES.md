@@ -19,6 +19,13 @@
   user already edited that text a Greek warning asks them to delete it manually.
 - **CI**: the frozen exe is verified with `DocDiff.exe --selftest` (real OCR + headless UI), not only built.
 
+## CI findings
+
+- The windows-latest runner only has the `en-US` OCR language; `Add-WindowsCapability Language.OCR~~~el-GR` ran ~10 min without installing it, so the step was
+  removed. **Greek OCR is therefore never exercised in CI** - verify it manually on a machine with Greek OCR installed.
+- Qt must be imported before any `winrt` module (otherwise an access violation on Windows); guarded in `docdiff/ocr/windows.py`.
+- pywinrt method names: `BitmapDecoder.get_software_bitmap_converted_async(format, alpha)`.
+
 ## Known limitations
 
 - Wrapped table cells (cell text on two physical lines) become extra rows with empty cells; a trailing row with a single filled cell is read as a paragraph.
